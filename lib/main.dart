@@ -1,8 +1,13 @@
+// ignore_for_file: public_member_api_docs, sort_constructors_first
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:bloc/bloc.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:bloc/bloc.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
 import 'firebase_options.dart';
-import 'dart:math' as math show Random;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,73 +30,91 @@ class MyApp extends StatelessWidget {
   }
 }
 
-//String List
-const names = ["Foo", "Bar", "Baz"];
-
-//Extradan method oluşturma yolu
-extension RandomElement<T> on Iterable<T> {
-  T getRandomElement() => elementAt(math.Random().nextInt(length));
+@immutable
+abstract class LoadAction {
+  const LoadAction();
 }
 
-//Temel seviye cubit örneği
-class NamesCubit extends Cubit<String?> {
-  NamesCubit() : super(null);
-
-  void pickRandomNames() => emit(names.getRandomElement());
+@immutable
+class LoadPersonsAction implements LoadAction {
+  final PersonUrl url;
+  const LoadPersonsAction({
+    required this.url,
+  }) : super();
 }
 
-class HomeScreen extends StatefulWidget {
+enum PersonUrl {
+  persons1,
+  persons2,
+}
+
+//Hosting yokken LiveServer extension ile simule edilebilir
+extension UrlString on PersonUrl {
+  String get urlString {
+    switch (this) {
+      case PersonUrl.persons1:
+        return "http://127.0.0.1:5500/api/persons1.json";
+      case PersonUrl.persons2:
+        return "http://127.0.0.1:5500/api/persons2.json";
+    }
+  }
+}
+
+@immutable
+class Person {
+  final String name;
+  final int age;
+
+  const Person({
+    required this.name,
+    required this.age,
+  });
+
+  //Süslü parantez olmadan method açma yolu örneği
+  Person.fromJson(Map<String, dynamic> json)
+      : name = json["name"] as String,
+        age = json["age"];
+}
+
+//Local host get request
+Future<Iterable<Person>> getPersons(String url) => HttpClient()
+    .getUrl(Uri.parse(url)) //Get request
+    .then((value) => value.close()) //Response
+    .then((value) => value.transform(utf8.decoder).join()) //Stream
+    .then((value) => json.decode(value) as List<dynamic>) //List
+    .then((value) => value.map((e) => Person.fromJson(e)) //Iterable of Persons
+        );
+
+@immutable
+class FetchResult {
+  final Iterable<Person> persons;
+  final bool isRetrievedFromCache;
+  const FetchResult({
+    required this.persons,
+    required this.isRetrievedFromCache,
+  });
+
+  @override
+  String toString() {
+    "FetchResult (isRetrievedFromCache = $isRetrievedFromCache, persons = $persons)";
+    return super.toString();
+  }
+}
+
+class PersonBloc extends Bloc<LoadAction, FetchResult?> {
+  final Map<PersonUrl, Iterable<Person>> _cache = {};
+  PersonBloc() : super(null);
+}
+
+class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  late final NamesCubit cubit;
-
-  //Cubit Tanımlama yolu
-  @override
-  void initState() {
-    super.initState();
-    cubit = NamesCubit();
-  }
-
-  //Cubitlerin kullanım sonrası kapatılması gereklidir
-  @override
-  void dispose() {
-    cubit.close();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    late final Bloc myBloc;
     return Scaffold(
       appBar: AppBar(
-        title: Text("Bloc Start"),
-      ),
-      body: StreamBuilder<String?>(
-        stream: cubit.stream,
-        builder: (context, snapshot) {
-          final button = TextButton(
-              onPressed: () => cubit.pickRandomNames(),
-              child: const Text("Pick A Name"));
-          switch (snapshot.connectionState) {
-            case ConnectionState.none:
-              return button;
-            case ConnectionState.waiting:
-              return button;
-            case ConnectionState.active:
-              return Column(
-                children: [
-                  Text(snapshot.data ?? ""),
-                  button,
-                ],
-              );
-            case ConnectionState.done:
-              return const SizedBox();
-          }
-        },
+        title: Text("Home Page"),
       ),
     );
   }
